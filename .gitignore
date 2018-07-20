@@ -7,3 +7,4 @@
 
 # My dirty tests
 /src/tests.php
+*.DS_Store

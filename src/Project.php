@@ -63,6 +63,8 @@ class Project
      */
     private $cacheDir;
 
+    private $projectDirs;
+
 
     /**
      * @param string $jetbrainsApp
@@ -83,6 +85,8 @@ class Project
         if (!mkdir($this->cacheDir) && !is_dir($this->cacheDir)) {
             throw new \RuntimeException(sprintf('Directory "%s" was not created', $this->cacheDir));
         }
+
+        $this->projectDirs = $_SERVER['jb_project_dirs'];
 
         if ($this->debug) {
             $this->result->enableDebug();
@@ -107,16 +111,40 @@ class Project
         try {
             $this->checkJetbrainsApp();
             $projectsData = $this->getProjectsData();
+            $allProjects = $this->getAllProjects(explode(":", $this->projectDirs));
 
+            $addedProjectPaths = array();
             foreach ($projectsData as $project) {
                 if ($hasQuery) {
                     if (stripos($project['name'], $query) !== false
                         || stripos($project['basename'], $query) !== false
                     ) {
-                        $this->addProjectItem($project['name'], $project['path']);
+                        if (!isset($addedProjectPaths[$project['path']])) {
+                           $addedProjectPaths[$project['path']] = TRUE;
+                           $this->addProjectItem($project['name'], $project['path']);
+                        }
                     }
                 } else {
-                    $this->addProjectItem($project['name'], $project['path']);
+                    if (!isset($addedProjectPaths[$project['path']])) {
+                        $addedProjectPaths[$project['path']] = TRUE;
+                        $this->addProjectItem($project['name'], $project['path']);
+                    }
+                }
+            }
+
+            foreach ($allProjects as $project) {
+                if ($hasQuery) {
+                    if (stripos($project['name'], $query) !== false) {
+                        if (!isset($addedProjectPaths[$project['path']])) {
+                           $addedProjectPaths[$project['path']] = TRUE;
+                           $this->addProjectItem($project['name'], $project['path']);
+                        }
+                    }
+                } else {
+                    if (!isset($addedProjectPaths[$project['path']])) {
+                        $addedProjectPaths[$project['path']] = TRUE;
+                        $this->addProjectItem($project['name'], $project['path']);
+                    }
                 }
             }
 
@@ -138,6 +166,48 @@ class Project
         $this->log("Projects: {$this->result->__toString()}");
 
         return $this->result;
+    }
+
+    private function getAllProjects($paths) {
+        $projects = [];
+
+        foreach ($paths as $path) {
+            $projects = $this->listProjectFolders($path);
+            foreach ($projects as $project) {
+                $tokens = explode("/", $project);
+                $name = array_pop($tokens);
+                $p = array();
+                $p['name'] = $name;
+                $p['path'] = $project;
+                $projects []= $p;
+            }
+        }
+        return $projects;
+    }
+
+    private function listProjectFolders($dir, $depth=0){
+
+        if (is_dir($dir.'/.git')) {
+            return array($dir);
+        }
+        if ($depth >= 6) {
+            return array();
+        }
+
+        $ffs = scandir($dir);
+
+        unset($ffs[array_search('.', $ffs, true)]);
+        unset($ffs[array_search('..', $ffs, true)]);
+
+        // prevent empty ordered elements
+        if (count($ffs) < 1)
+            return array();
+        $dirs = [];
+
+        foreach($ffs as $ff){
+            if(is_dir($dir.'/'.$ff)) $dirs = array_merge($dirs, $this->listProjectFolders($dir.'/'.$ff, $depth+1));
+        }
+        return $dirs;
     }
 
     /**
